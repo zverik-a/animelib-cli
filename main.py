@@ -1,19 +1,25 @@
 # main.py
-import sys
+import argparse
 import subprocess
 from api import search_anime, get_anime_details, get_anime_episodes, get_episode_details
 from ui import console, select_anime, display_details_table, post_details_menu, select_episode, select_player_stream
 from parsers import parse_players
 
-def main():
-    query = sys.argv[1] if len(sys.argv) > 1 else input("Введите название для поиска: ")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Search anime and play selected episodes with mpv.")
+    parser.add_argument("query", nargs="?", help="anime title to search for")
+    args = parser.parse_args()
+    query = (args.query or input("Введите название для поиска: ")).strip()
+    if not query:
+        console.print("[yellow]Введите название для поиска.[/yellow]")
+        return 2
     
     console.print(f"[bold blue]Поиск:[bold blue] {query}...")
     results = search_anime(query)
     
     if not results:
         console.print("[yellow]Ничего не найдено.[/yellow]")
-        return
+        return 0
 
     while True:
         selected_item = select_anime(results)
@@ -36,7 +42,11 @@ def main():
             continue
         elif action == "next":
             console.print(f"\n[bold green]Загрузка эпизодов...[/bold green]")
-            episodes = get_anime_episodes(slug_url)
+            anime_id = selected_item.get("id")
+            if anime_id is None:
+                console.print("[red]У выбранного тайтла отсутствует ID для загрузки эпизодов.[/red]")
+                continue
+            episodes = get_anime_episodes(anime_id)
             
             selected_ep = select_episode(episodes)
             if selected_ep:
@@ -67,8 +77,17 @@ def main():
                         cmd.append(f"--sub-file={sub_url}")
 
                     cmd.append(stream_url)
-                    subprocess.run(cmd)
+                    try:
+                        subprocess.run(cmd, check=False)
+                    except FileNotFoundError:
+                        console.print("[bold red]mpv не найден. Установите mpv и повторите попытку.[/bold red]")
+                        return 1
             break
+    return 0
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Отменено.[/yellow]")
+        raise SystemExit(130)

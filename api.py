@@ -1,67 +1,54 @@
+"""Small HTTP client for the HentaiCDN API."""
+
+from typing import Any
+from urllib.parse import quote
+
 import requests
-from config import BASE_URL, HEADERS
+from rich.console import Console
 
-def search_anime(query: str) -> list:
-    params = {
-        "q": query,
-        "fields[0]": "rate_avg",
-        "fields[1]": "rate",
-        "fields[2]": "releaseDate"
-    }
+from config import API_ROOT, BASE_URL, HEADERS, REQUEST_TIMEOUT
 
+console = Console()
+
+
+def _request(url: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
     try:
-        response = requests.get(BASE_URL, params=params, headers=HEADERS, timeout=10)
+        response = requests.get(url, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
-        return response.json().get("data", [])
-    except requests.RequestException:
-        return []
-
-def get_anime_details(slug_url: str) -> dict:
-    url = f"{BASE_URL}/{slug_url}"
-    params = {
-        "fields[0]": "genres",
-        "fields[1]": "tags",
-        "fields[2]": "releaseDate",
-        "fields[3]": "summary",
-        "fields[4]": "episodes_count",
-        "fields[5]": "episodes",
-        "fields[6]": "time",
-        "fields[7]": "teams",      # Добавлено
-        "fields[8]": "shiki_rate"  # Добавлено
-    }
-
-    try:
-        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
-        response.raise_for_status()
-        return response.json().get("data", {})
-    except requests.RequestException:
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("API returned an unexpected response format")
+        return payload
+    except (requests.RequestException, ValueError) as exc:
+        console.print(f"[bold red]API request failed:[/bold red] {exc}")
         return {}
 
-# api.py
-def get_anime_episodes(slug_url: str) -> list:
-    """Запрос списка эпизодов тайтла."""
-    url = "https://hapi.hentaicdn.org/api/episodes"
-    params = {
-        "anime_id": slug_url
-    }
 
-    try:
-        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
-        response.raise_for_status()
-        return response.json().get("data", [])
-    except requests.RequestException as e:
-        print(f"[bold red]Ошибка получения эпизодов:[bold red] {e}")
-        return []
+def search_anime(query: str) -> list[dict[str, Any]]:
+    """Search for anime by title."""
+    payload = _request(BASE_URL, params={"q": query, "fields[0]": "rate_avg", "fields[1]": "rate", "fields[2]": "releaseDate"})
+    data = payload.get("data", [])
+    return data if isinstance(data, list) else []
 
-# api.py
-def get_episode_details(episode_id: int | str) -> dict:
-    """Запрос плееров и ссылок на видео для конкретного эпизода."""
-    url = f"https://hapi.hentaicdn.org/api/episodes/{episode_id}"
 
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        response.raise_for_status()
-        return response.json().get("data", {})
-    except requests.RequestException as e:
-        print(f"[bold red]Ошибка загрузки плееров:[bold red] {e}")
-        return {}
+def get_anime_details(slug_url: str) -> dict[str, Any]:
+    """Fetch details for an anime slug."""
+    fields = ("genres", "tags", "releaseDate", "summary", "episodes_count", "episodes", "time", "teams", "shiki_rate")
+    params = {f"fields[{idx}]": field for idx, field in enumerate(fields)}
+    payload = _request(f"{BASE_URL}/{quote(str(slug_url), safe='')}", params=params)
+    data = payload.get("data", {})
+    return data if isinstance(data, dict) else {}
+
+
+def get_anime_episodes(anime_id: int | str) -> list[dict[str, Any]]:
+    """Fetch episodes for an anime ID."""
+    payload = _request(f"{API_ROOT}/episodes", params={"anime_id": str(anime_id)})
+    data = payload.get("data", [])
+    return data if isinstance(data, list) else []
+
+
+def get_episode_details(episode_id: int | str) -> dict[str, Any]:
+    """Fetch available players for an episode."""
+    payload = _request(f"{API_ROOT}/episodes/{quote(str(episode_id), safe='')}")
+    data = payload.get("data", {})
+    return data if isinstance(data, dict) else {}

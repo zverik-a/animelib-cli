@@ -1,4 +1,12 @@
 .venv/
+venv/
 __pycache__/
 *.pyc
 .DS_Store
+dist/
+build/
+.gitignore
+animelib.spec
+.env
+.env.*
+!.env.example
